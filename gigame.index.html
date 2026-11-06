@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>低 GI 血糖大作戰 - 國三 Edutainment 版</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* 防止平板手勢與滾動干擾 */
+        }
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 850px;
+            height: 650px;
+            background: linear-gradient(to bottom, #1a1a3a, #0b0b18);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* UI 側邊血糖計與資訊欄 */
+        .ui-panel {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 200px;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            border-radius: 14px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            z-index: 4;
+        }
+        .bg-meter-container {
+            height: 180px;
+            width: 34px;
+            background: #222;
+            border-radius: 17px;
+            position: relative;
+            margin: 10px auto;
+            border: 2px solid #fff;
+            overflow: hidden;
+        }
+        .bg-zone { position: absolute; width: 100%; left: 0; }
+        .zone-high { bottom: 80%; height: 20%; background: rgba(239, 71, 111, 0.4); }
+        .zone-safe { bottom: 40%; height: 40%; background: rgba(6, 214, 160, 0.4); }
+        .zone-low { bottom: 0%; height: 40%; background: rgba(255, 209, 102, 0.4); }
+        
+        .bg-bar {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 50%;
+            background: #06d6a0;
+            transition: height 0.15s ease-out, background-color 0.2s;
+        }
+        .bg-text { text-align: center; font-size: 22px; font-weight: bold; }
+        .stats { margin-top: 10px; font-size: 13px; line-height: 1.6; }
+        
+        /* 突發事件廣播標籤 */
+        #event-banner {
+            position: absolute;
+            top: 20px;
+            left: 45%;
+            transform: translateX(-50%);
+            background: rgba(239, 71, 111, 0.95);
+            color: #fff;
+            padding: 12px 26px;
+            border-radius: 30px;
+            font-size: 19px;
+            font-weight: bold;
+            display: none;
+            z-index: 5;
+            box-shadow: 0 4px 15px rgba(239, 71, 111, 0.6);
+            animation: pulse 0.7s infinite alternate;
+        }
+        /* 道具吃到時的文字提示 */
+        #item-toast {
+            position: absolute;
+            top: 80px;
+            left: 45%;
+            transform: translateX(-50%);
+            background: rgba(76, 201, 240, 0.95);
+            color: #000;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 17px;
+            font-weight: bold;
+            display: none;
+            z-index: 6;
+            box-shadow: 0 4px 12px rgba(76, 201, 240, 0.5);
+        }
+        /* 高血糖危險倒數警告 */
+        #warning-toast {
+            position: absolute;
+            top: 130px;
+            left: 45%;
+            transform: translateX(-50%);
+            background: #ef476f;
+            color: #fff;
+            padding: 8px 18px;
+            border-radius: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            display: none;
+            z-index: 6;
+        }
+        @keyframes pulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.06); } }
+
+        /* 超大顆散步按鈕 (右下角) */
+        #walk-btn {
+            position: absolute;
+            bottom: 25px;
+            right: 25px;
+            width: 125px;
+            height: 125px;
+            background: radial-gradient(circle, #4cc9f0, #4895ef);
+            border: 4px solid #fff;
+            border-radius: 50%;
+            color: #fff;
+            font-weight: bold;
+            font-size: 18px;
+            box-shadow: 0 6px 18px rgba(76, 201, 240, 0.6);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 5;
+            cursor: pointer;
+        }
+        #walk-btn:active { transform: scale(0.9); }
+
+        /* Overlay 彈窗 (設定與結算) */
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            padding: 25px;
+            text-align: center;
+        }
+        .overlay h1 { font-size: 36px; margin-bottom: 15px; color: #06d6a0; }
+        .avatar-select { display: flex; gap: 15px; margin: 15px 0; }
+        .avatar-opt {
+            font-size: 32px;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            cursor: pointer;
+        }
+        .avatar-opt.selected { border-color: #06d6a0; background: rgba(6,214,160,0.2); }
+        .name-input {
+            padding: 10px 15px;
+            font-size: 18px;
+            border-radius: 8px;
+            border: none;
+            margin-bottom: 15px;
+            text-align: center;
+            width: 220px;
+        }
+        .btn-start {
+            padding: 14px 40px;
+            font-size: 22px;
+            background: #06d6a0;
+            border: none;
+            border-radius: 30px;
+            color: #111;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(6, 214, 160, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="850" height="650"></canvas>
+    
+    <div id="event-banner">⚠️ 警報發起！</div>
+    <div id="item-toast">道具效果！</div>
+    <div id="warning-toast">🚨 高血糖危險倒數：5s</div>
+
+    <!-- UI 側邊血糖計 -->
+    <div class="ui-panel">
+        <div class="bg-text" id="bg-val">50%</div>
+        <div class="bg-meter-container">
+            <div class="bg-zone zone-high"></div>
+            <div class="bg-zone zone-safe"></div>
+            <div class="bg-zone zone-low"></div>
+            <div class="bg-bar" id="bg-bar"></div>
+        </div>
+        <div class="stats">
+            <div>⏱️ 存活時間: <span id="time-val" style="color: #4cc9f0; font-size: 16px; font-weight: bold;">0</span> 秒</div>
+            <div>🏆 累計分數: <span id="score-val" style="color: #ffd166; font-size: 15px; font-weight: bold;">0</span> 分</div>
+            <div>🛡️ 高纖盾牌: <span id="shield-val">無</span></div>
+            <div>狀態: <span id="status-val">平穩</span></div>
+        </div>
+    </div>
+
+    <!-- 超大顆散步按鈕 -->
+    <div id="walk-btn">
+        <span style="font-size: 30px;">🚶‍♂️</span>
+        <span>快速散步</span>
+    </div>
+
+    <!-- 開始/設定 Overlay -->
+    <div class="overlay" id="overlay">
+        <h1 id="overlay-title">低 GI 血糖大作戰</h1>
+        <p style="font-size: 15px; color:#bbb; margin-bottom: 10px;">請選擇您的角色並輸入暱稱：</p>
+        
+        <div class="avatar-select">
+            <div class="avatar-opt selected" onclick="selectAvatar('👦🏻')">👦🏻</div>
+            <div class="avatar-opt" onclick="selectAvatar('👩🏻')">👩🏻</div>
+            <div class="avatar-opt" onclick="selectAvatar('🐷')">🐷</div>
+            <div class="avatar-opt" onclick="selectAvatar('🐵')">🐵</div>
+            <div class="avatar-opt" onclick="selectAvatar('🐤')">🐤</div>
+        </div>
+
+        <input type="text" id="player-name" class="name-input" value="控糖小勇士" maxlength="8">
+
+        <p id="overlay-msg" style="font-size: 14px; max-width: 80%; line-height: 1.5; color: #ddd; margin-bottom: 20px;">
+            📱 <b>操作：</b>在螢幕底部左右滑動移動角色。<br>
+            🚨 <b>高血糖危機：</b>血糖高於 80% 處於危險狀態！若持續超過 5 秒未降回即 Game Over，請按【快速散步】或吃到【水壺】降血糖！
+        </p>
+        <button class="btn-start" id="start-btn" onclick="startGame()">開始遊戲</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// UI 元素
+const bgValEl = document.getElementById('bg-val');
+const bgBarEl = document.getElementById('bg-bar');
+const timeValEl = document.getElementById('time-val');
+const scoreValEl = document.getElementById('score-val');
+const shieldValEl = document.getElementById('shield-val');
+const statusValEl = document.getElementById('status-val');
+const eventBanner = document.getElementById('event-banner');
+const itemToast = document.getElementById('item-toast');
+const warningToast = document.getElementById('warning-toast');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayMsg = document.getElementById('overlay-msg');
+const walkBtn = document.getElementById('walk-btn');
+
+// 遊戲變數
+let gameActive = false;
+let surviveTime = 0;
+let score = 0;
+let startTime = 0;
+let bloodSugar = 50;
+let highSugarTimer = 0; // 高血糖危險倒數計時(幀)
+let shieldTimer = 0;
+let walkFreezeTimer = 0;
+let selectedAvatar = '👦🏻';
+let playerName = '控糖小勇士';
+
+// 食物資料庫 (16 種食物 + 2 種道具)
+const FOODS = [
+    // 🟢 好食物 (8 種)
+    { name: '🥬 蔬菜', gi: 3, score: 10, type: 'good' },
+    { name: '🫛 豌豆', gi: 4, score: 10, type: 'good' },
+    { name: '🥦 花椰菜', gi: 3, score: 10, type: 'good' },
+    { name: '🍎 蘋果', gi: 5, score: 10, type: 'good' },
+    { name: '🍠 地瓜', gi: 7, score: 10, type: 'good' },
+    { name: '🌽 玉米', gi: 8, score: 10, type: 'good' },
+    { name: '🥔 馬鈴薯', gi: 9, score: 10, type: 'good' },
+    { name: '🍙 飯糰', gi: 8, score: 10, type: 'good' },
+
+    // 🔴 壞食物 (7 種)
+    { name: '🍔 漢堡', gi: 20, score: -15, type: 'bad' },
+    { name: '🥞 鬆餅', gi: 22, score: -15, type: 'bad' },
+    { name: '🥐 可頌', gi: 19, score: -15, type: 'bad' },
+    { name: '🍦 冰淇淋', gi: 25, score: -15, type: 'bad' },
+    { name: '🧋 珍奶', gi: 30, score: -15, type: 'bad' },
+    { name: '🍩 甜甜圈', gi: 26, score: -15, type: 'bad' },
+    { name: '🥭 芒果乾', gi: 24, score: -15, type: 'bad' },
+
+    // ⚠️ 隱形殺手
+    { name: '🧃 加工果汁', gi: 28, score: -15, type: 'bad', isTrick: true },
+
+    // 🎁 道具
+    { name: '💧 水壺', gi: -15, score: 15, type: 'item', effect: 'water' },
+    { name: '🛡️ 高纖盾牌', gi: 0, score: 15, type: 'item', effect: 'shield' }
+];
+
+// 玩家角色
+const player = {
+    x: 320,
+    y: 530,
+    width: 100,
+    height: 45,
+    targetX: 320
+};
+
+let activeFoods = [];
+let spawnTimer = 0;
+let eventTimer = 0;
+let activeEvent = null;
+
+// 角色選擇處理
+function selectAvatar(avatar) {
+    selectedAvatar = avatar;
+    document.querySelectorAll('.avatar-opt').forEach(el => {
+        el.classList.toggle('selected', el.innerText === avatar);
+    });
+}
+
+// 平板觸控與滑鼠操作
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    let rect = canvas.getBoundingClientRect();
+    let touchX = e.touches[0].clientX - rect.left;
+    player.targetX = touchX - player.width / 2;
+}, { passive: false });
+
+canvas.addEventListener('mousemove', e => {
+    let rect = canvas.getBoundingClientRect();
+    player.targetX = e.clientX - rect.left - player.width / 2;
+});
+
+// 散步按鈕
+walkBtn.addEventListener('touchstart', e => { e.preventDefault(); triggerWalk(); });
+walkBtn.addEventListener('click', triggerWalk);
+
+function triggerWalk() {
+    if (!gameActive) return;
+    bloodSugar = Math.max(0, bloodSugar - 4);
+    walkFreezeTimer = 8;
+}
+
+function showToast(text, color = '#4cc9f0') {
+    itemToast.innerText = text;
+    itemToast.style.background = color;
+    itemToast.style.display = 'block';
+    setTimeout(() => { itemToast.style.display = 'none'; }, 2000);
+}
+
+function startGame() {
+    playerName = document.getElementById('player-name').value || '控糖小勇士';
+    bloodSugar = 50;
+    surviveTime = 0;
+    score = 0;
+    highSugarTimer = 0;
+    shieldTimer = 0;
+    activeFoods = [];
+    activeEvent = null;
+    gameActive = true;
+    startTime = Date.now();
+    overlay.style.display = 'none';
+    warningToast.style.display = 'none';
+    requestAnimationFrame(gameLoop);
+}
+
+function gameOver(reason) {
+    gameActive = false;
+    warningToast.style.display = 'none';
+    overlay.style.display = 'flex';
+    overlayTitle.innerText = "挑戰結束 Game Over";
+    overlayMsg.innerHTML = `
+        玩家：<b>${selectedAvatar} ${playerName}</b><br>
+        原因：<b style="color:#ef476f;">${reason}</b><br><br>
+        ⏱️ 存活時間：<b style="font-size:24px; color:#4cc9f0;">${surviveTime}</b> 秒<br>
+        🏆 最終得分：<b style="font-size:24px; color:#ffd166;">${Math.floor(score)}</b> 分
+    `;
+}
+
+// 4 大情境題（突發事件）
+function triggerRandomEvent() {
+    let events = ['GRANDMA', 'BOBA', 'EXAM', 'VEGE'];
+    activeEvent = events[Math.floor(Math.random() * events.length)];
+    
+    let msg = "";
+    if (activeEvent === 'GRANDMA') msg = "👵 阿嬤覺得你餓！投遞大量甜點！";
+    if (activeEvent === 'BOBA') msg = "🥤 手搖飲買一送一！高糖飲料襲來！";
+    if (activeEvent === 'EXAM') msg = "📚 段考壓力大爆發！壞食物狂降！";
+    if (activeEvent === 'VEGE') msg = "🥗 小農有機蔬果節！全場健康大補血！";
+
+    eventBanner.innerText = msg;
+    eventBanner.style.display = 'block';
+
+    setTimeout(() => {
+        eventBanner.style.display = 'none';
+        activeEvent = null;
+    }, 4500);
+}
+
+// 生成食物 (前面慢、後面越來越快)
+function spawnFood() {
+    let foodPool = [];
+    if (activeEvent === 'VEGE') {
+        foodPool = FOODS.filter(f => f.type === 'good');
+    } else if (activeEvent) {
+        foodPool = FOODS.filter(f => f.type === 'bad');
+    } else {
+        foodPool = FOODS;
+    }
+
+    let selected = foodPool[Math.floor(Math.random() * foodPool.length)];
+    
+    // 掉落速度曲線：基礎 2.0，每過 10 秒增加 0.4 速度
+    let baseSpeed = 2.0 + (surviveTime / 10) * 0.4;
+    
+    activeFoods.push({
+        ...selected,
+        x: Math.random() * (canvas.width - 250) + 20,
+        y: -40,
+        speed: baseSpeed + Math.random() * 1.5
+    });
+}
+
+// 主遊戲迴圈
+function gameLoop() {
+    if (!gameActive) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    surviveTime = Math.floor((Date.now() - startTime) / 1000);
+
+    // 平常血糖微幅下降 (自然代謝)
+    bloodSugar -= 0.03;
+
+    // 判斷高血糖 5 秒危險倒數 (高於 80%)
+    if (bloodSugar > 80) {
+        highSugarTimer++;
+        let remainSec = Math.max(0, (300 - highSugarTimer) / 60).toFixed(1);
+        warningToast.innerText = `🚨 高血糖過久！危險倒數: ${remainSec}s`;
+        warningToast.style.display = 'block';
+
+        if (highSugarTimer >= 300) { // 滿 5 秒 (300幀)
+            return gameOver("高血糖持續過久引發酮酸中毒！");
+        }
+    } else {
+        highSugarTimer = 0;
+        warningToast.style.display = 'none';
+    }
+
+    // Game Over 判定
+    if (bloodSugar <= 0) return gameOver("血糖歸零！陷入低血糖休克。");
+    if (bloodSugar >= 100) return gameOver("血糖暴衝 100%！高血糖急性昏迷。");
+
+    // 角色移動
+    if (walkFreezeTimer > 0) {
+        walkFreezeTimer--;
+    } else {
+        player.x += (player.targetX - player.x) * 0.25;
+    }
+    player.x = Math.max(0, Math.min(canvas.width - 220 - player.width, player.x));
+
+    // 繪製角色 (放大且更清晰)
+    ctx.fillStyle = walkFreezeTimer > 0 ? '#4cc9f0' : (shieldTimer > 0 ? '#ffd166' : '#4a90e2');
+    ctx.beginPath();
+    ctx.roundRect(player.x, player.y, player.width, player.height, 12);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    let pLabel = walkFreezeTimer > 0 ? '🚶‍♂️ 散步中' : `${selectedAvatar} ${playerName}`;
+    ctx.fillText(pLabel, player.x + player.width/2, player.y + 28);
+
+    // 事件觸發計時
+    eventTimer++;
+    if (eventTimer > 500 && !activeEvent) {
+        if (Math.random() < 0.7) triggerRandomEvent();
+        eventTimer = 0;
+    }
+
+    // 食物掉落頻率曲線 (越後面生成越密)
+    spawnTimer++;
+    let spawnInterval = activeEvent ? 12 : Math.max(12, 50 - Math.floor(surviveTime / 8) * 5);
+    if (spawnTimer > spawnInterval) {
+        spawnFood();
+        spawnTimer = 0;
+    }
+
+    // 處理食物 (放大半徑至 35px)
+    for (let i = activeFoods.length - 1; i >= 0; i--) {
+        let f = activeFoods[i];
+        f.y += f.speed;
+
+        // 外框放大
+        ctx.fillStyle = f.type === 'good' ? 'rgba(6, 214, 160, 0.25)' : (f.type === 'bad' ? 'rgba(239, 71, 111, 0.25)' : 'rgba(76, 201, 240, 0.35)');
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, 35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = f.type === 'good' ? '#06d6a0' : (f.type === 'bad' ? '#ef476f' : '#4cc9f0');
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // 圖示文字放大
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(f.name, f.x, f.y + 5);
+
+        // 碰撞檢測
+        if (
+            f.y + 35 >= player.y &&
+            f.x >= player.x - 15 &&
+            f.x <= player.x + player.width + 15
+        ) {
+            if (f.type === 'item') {
+                if (f.effect === 'water') {
+                    bloodSugar += f.gi;
+                    showToast("💧 多喝水促進代謝！血糖 -15%", "#4cc9f0");
+                }
+                if (f.effect === 'shield') {
+                    shieldTimer = 360; // 6 秒
+                    showToast("🛡️ 高纖阻斷！6秒內壞食物不升糖", "#ffd166");
+                }
+            } else {
+                let giGain = f.gi;
+                if (shieldTimer > 0 && giGain > 0) giGain = 0; // 高纖盾牌完封壞食物
+                bloodSugar += giGain;
+                score += f.score;
+            }
+
+            bloodSugar = Math.min(100, Math.max(0, bloodSugar));
+            activeFoods.splice(i, 1);
+            continue;
+        }
+
+        if (f.y > canvas.height + 40) activeFoods.splice(i, 1);
+    }
+
+    // 黃金區持續加分
+    if (bloodSugar >= 40 && bloodSugar <= 80) score += 0.08;
+
+    // UI 更新
+    if (shieldTimer > 0) shieldTimer--;
+    bgValEl.innerText = `${Math.round(bloodSugar)}%`;
+    bgBarEl.style.height = `${bloodSugar}%`;
+    timeValEl.innerText = surviveTime;
+    scoreValEl.innerText = Math.floor(score);
+    shieldValEl.innerText = shieldTimer > 0 ? `${Math.ceil(shieldTimer/60)}s` : '無';
+
+    // 狀態色彩變更
+    if (bloodSugar < 40) {
+        statusValEl.innerText = "📉 低血糖 (快吃高糖急救！)";
+        statusValEl.style.color = "#ffd166";
+        bgBarEl.style.backgroundColor = '#ffd166';
+    } else if (bloodSugar > 80) {
+        statusValEl.innerText = "🥵 高血糖 (快按散步/喝水！)";
+        statusValEl.style.color = "#ef476f";
+        bgBarEl.style.backgroundColor = '#ef476f';
+    } else {
+        statusValEl.innerText = "🌟 黃金區 (加成中)";
+        statusValEl.style.color = "#06d6a0";
+        bgBarEl.style.backgroundColor = '#06d6a0';
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+</script>
+</body>
+</html>
